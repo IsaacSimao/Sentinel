@@ -11,29 +11,37 @@ def check_url(url):
     try:
         response = httpx.get( url, timeout = tempo_Limite)
         
-        status = "Sistema online"
         status_code = response.status_code 
 
         if status_code == 200:
-            status = "Sistema online"
+            status = "ONLINE"
+            message = "Sistema online"
 
         elif status_code == 404:
-            status = "Recurso não encontrado"
+            status = "ERROR"
+            message = "Recurso não encontrado"
 
         elif status_code == 500:
-            status = "Erro interno do servidor"
+            status = "ERROR"
+            message = "Erro interno do servidor"
 
         else:
-            status = "Status de Erro Indefinido"
+            status = "ERROR"
+            message = "Status de Erro Indefinido"
 
     except httpx.ConnectError:
-        
-        status = "Sistema offline"
+        status = "OFFLINE"
         status_code = None
+        message = "Sistema offline"
 
     except httpx.TimeoutException:
+        status = "TIMEOUT"
+        status_code = None
+        message = "Tempo de Resposta Excedido"
 
-        status = "Erro: Tempo de Resposta Excedido"
+    except httpx.HTTPError:
+        status = "ERROR"
+        message = "Erro na comunicação com o servidor"
         status_code = None
        
 
@@ -42,8 +50,9 @@ def check_url(url):
     response_time = end_time - start_time
 
     return {
-        "url": url,
-        "status": status,
-        "status_code": status_code,
-        "response_time": response_time,
+    "url": url,
+    "status": status,
+    "message": message,
+    "status_code": status_code,
+    "response_time": response_time
     }
