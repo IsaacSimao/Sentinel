@@ -84,10 +84,45 @@ def formatar_duracao(segundos):
 
     return f"{segundos_restantes}s"
 
+def calcular_metricas(monitor, status_atual, agora):
+
+    tempo_monitorado = (
+        agora - monitor["inicio_monitoramento"]
+    ).total_seconds()
+
+    tempo_offline_atual = 0
+
+    if status_atual == "OFFLINE" and "inicio_offline" in monitor:
+
+        tempo_offline_atual = (
+            agora - monitor["inicio_offline"]
+        ).total_seconds()
+
+    tempo_offline_total = (
+        monitor["tempo_total_offline"] + tempo_offline_atual
+    )
+
+    tempo_online = max(
+        0,
+        tempo_monitorado - tempo_offline_total
+    )
+
+    uptime = 0
+
+    if tempo_monitorado > 0:
+
+        uptime = (tempo_online / tempo_monitorado) * 100
+        uptime = round(uptime, 2)
+
+    return {
+        "tempo_monitorado": tempo_monitorado,
+        "tempo_online": tempo_online,
+        "tempo_offline": tempo_offline_total,
+        "uptime": uptime
+    }
+
 def atualizar_UrlListadas():
-
     for monitor in urls_monitoradas:
-
         status_anterior = monitor["status"]
         resultado = check_url(monitor["url"])
 
@@ -97,30 +132,23 @@ def atualizar_UrlListadas():
             monitor["inicio_offline"] = agora
 
         if status_anterior != resultado["status"]:
-
             timestamp_evento = datetime.now()
 
             if resultado["status"] == "OFFLINE":
                 tipo_evento = "DOWN"
                 monitor["total_quedas"] += 1
-
             elif resultado["status"] == "ONLINE":
                 tipo_evento = "RECOVERY"
                 monitor["total_recuperacoes"] += 1
-
             else:
                 tipo_evento = "STATUS_CHANGE"
 
             duracao = None
 
             if tipo_evento == "RECOVERY":
-
-                 if "inicio_offline" in monitor:
-
+                  if "inicio_offline" in monitor:
                     duracao = timestamp_evento - monitor["inicio_offline"]
-
                     monitor["tempo_total_offline"] += duracao.total_seconds()
-
                     monitor.pop("inicio_offline", None)
 
             evento = {
@@ -133,43 +161,23 @@ def atualizar_UrlListadas():
             }
 
             historico_eventos.append(evento)
-
             print("O status do sistema mudou!")
 
-        tempo_monitorado = (
-            agora - monitor["inicio_monitoramento"]
-        ).total_seconds()
-
-        tempo_offline_atual = 0
-
-        if resultado["status"] == "OFFLINE" and "inicio_offline" in monitor:
-            tempo_offline_atual = (
-                agora - monitor["inicio_offline"]
-            ).total_seconds()
-
-        tempo_offline_total = (
-            monitor["tempo_total_offline"] + tempo_offline_atual
+        metricas = calcular_metricas(
+            monitor,
+            resultado["status"],
+            agora
         )
+        monitor.update(metricas)
 
-        tempo_online = max(
-            0,
-            tempo_monitorado - tempo_offline_total
+        tempo_monitorado_formatado = formatar_duracao(
+            metricas["tempo_monitorado"]
         )
-
-        uptime = 0
-
-        if tempo_monitorado > 0:
-            uptime = (tempo_online / tempo_monitorado) * 100
-            uptime = round(uptime, 2)
-
-        monitor["tempo_monitorado"] = tempo_monitorado
-        monitor["tempo_online"] = tempo_online
-        monitor["uptime"] = uptime
-
-        tempo_monitorado_formatado = formatar_duracao(tempo_monitorado)
-        tempo_online_formatado = formatar_duracao(tempo_online)
+        tempo_online_formatado = formatar_duracao(
+            metricas["tempo_online"]
+        )
         tempo_offline_formatado = formatar_duracao(
-            tempo_offline_total
+            metricas["tempo_offline"]
         )
 
         print("Anterior:", status_anterior)
@@ -177,7 +185,7 @@ def atualizar_UrlListadas():
         print("Tempo monitorado:", tempo_monitorado_formatado)
         print("Tempo online:", tempo_online_formatado)
         print("Tempo offline:", tempo_offline_formatado)
-        print("Uptime:", uptime)
+        print("Uptime:", metricas["uptime"])
 
         monitor.update(resultado)
 
