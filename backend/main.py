@@ -1,8 +1,17 @@
 from fastapi import FastAPI
 from services.monitor_service import check_url
 from datetime import datetime
+from contextlib import asynccontextmanager
 
-app = FastAPI()
+import time
+import threading
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    iniciar_monitoramento()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 urls_monitoradas = []
 historico_eventos = []
@@ -83,31 +92,9 @@ def atualizar_UrlListadas():
         resultado = check_url(monitor["url"])
 
         agora = datetime.now()
-        tempo_monitorado = (agora - monitor["inicio_monitoramento"]).total_seconds()
 
-        tempo_online = max(
-        0,
-        tempo_monitorado - monitor["tempo_total_offline"]
-                        )
-        uptime = 0
-
-        if tempo_monitorado > 0:
-          uptime = (tempo_online / tempo_monitorado) * 100
-          uptime = round(uptime, 2)
-        monitor["tempo_monitorado"] = tempo_monitorado
-
-        monitor["tempo_online"] = tempo_online
-        monitor["uptime"] = uptime
-        tempo_monitorado_formatado = formatar_duracao(tempo_monitorado)
-        tempo_online_formatado = formatar_duracao(tempo_online)
-        tempo_offline_formatado = formatar_duracao(monitor["tempo_total_offline"])
-
-        print("Anterior:", status_anterior)
-        print("Atual:", resultado["status"])
-        print("Tempo monitorado:", tempo_monitorado_formatado)
-        print("Tempo online:", tempo_online_formatado)
-        print("Tempo offline:", tempo_offline_formatado)
-        print("Uptime:", uptime)
+        if status_anterior != resultado["status"] and resultado["status"] == "OFFLINE":
+            monitor["inicio_offline"] = agora
 
         if status_anterior != resultado["status"]:
 
@@ -128,17 +115,13 @@ def atualizar_UrlListadas():
 
             if tipo_evento == "RECOVERY":
 
-                for evento_anterior in reversed(historico_eventos):
+                 if "inicio_offline" in monitor:
 
-                    if (
-                        evento_anterior["url"] == monitor["url"]
-                        and evento_anterior["tipo"] == "DOWN"
-                    ):
-                        duracao = timestamp_evento - evento_anterior["timestamp"]
+                    duracao = timestamp_evento - monitor["inicio_offline"]
 
-                        monitor["tempo_total_offline"] += duracao.total_seconds()
+                    monitor["tempo_total_offline"] += duracao.total_seconds()
 
-                        break
+                    monitor.pop("inicio_offline", None)
 
             evento = {
                 "url": monitor["url"],
@@ -153,7 +136,67 @@ def atualizar_UrlListadas():
 
             print("O status do sistema mudou!")
 
+        tempo_monitorado = (
+            agora - monitor["inicio_monitoramento"]
+        ).total_seconds()
+
+        tempo_offline_atual = 0
+
+        if resultado["status"] == "OFFLINE" and "inicio_offline" in monitor:
+            tempo_offline_atual = (
+                agora - monitor["inicio_offline"]
+            ).total_seconds()
+
+        tempo_offline_total = (
+            monitor["tempo_total_offline"] + tempo_offline_atual
+        )
+
+        tempo_online = max(
+            0,
+            tempo_monitorado - tempo_offline_total
+        )
+
+        uptime = 0
+
+        if tempo_monitorado > 0:
+            uptime = (tempo_online / tempo_monitorado) * 100
+            uptime = round(uptime, 2)
+
+        monitor["tempo_monitorado"] = tempo_monitorado
+        monitor["tempo_online"] = tempo_online
+        monitor["uptime"] = uptime
+
+        tempo_monitorado_formatado = formatar_duracao(tempo_monitorado)
+        tempo_online_formatado = formatar_duracao(tempo_online)
+        tempo_offline_formatado = formatar_duracao(
+            tempo_offline_total
+        )
+
+        print("Anterior:", status_anterior)
+        print("Atual:", resultado["status"])
+        print("Tempo monitorado:", tempo_monitorado_formatado)
+        print("Tempo online:", tempo_online_formatado)
+        print("Tempo offline:", tempo_offline_formatado)
+        print("Uptime:", uptime)
+
         monitor.update(resultado)
+
+def monitoramento_automatico():
+
+    while True:
+        atualizar_UrlListadas()
+        time.sleep(10)
+
+
+def iniciar_monitoramento():
+
+    thread_monitoramento = threading.Thread(
+        target=monitoramento_automatico,
+        daemon=True
+    )
+
+    thread_monitoramento.start()
+
 
 @app.get("/events")
 def listarEventos():
