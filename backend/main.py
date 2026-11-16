@@ -44,6 +44,22 @@ def monitorarUrl(url):
     resultado = check_url(url)
 
     resultado["total_quedas"] = 0
+
+    if resultado["status"] == "OFFLINE":
+     resultado["inicio_offline"] = datetime.now()
+     evento = {
+        "url": url,
+        "status_anterior": None,
+        "status_atual": "OFFLINE",
+        "tipo": "DOWN",
+        "timestamp": datetime.now(),
+        "duracao": None
+    }
+
+     historico_eventos.append(evento)
+
+    resultado["total_quedas"] = 1
+
     resultado["total_recuperacoes"] = 0
     resultado["tempo_total_offline"] = 0
     resultado["inicio_monitoramento"] = datetime.now()
